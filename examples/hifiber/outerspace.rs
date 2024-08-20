@@ -38,12 +38,15 @@ use std::io::Result;
 
 use hifiber::core::tensor::Tensor;
 pub fn main() -> Result<()> {
-    let K: i32 = 10;
-    let M: i32 = 10;
-    let N: i32 = 10;
-    let A_KM: Tensor = Tensor::new_empty(vec!["K", "M"], vec![K, M]);
-    let B_KN: Tensor = Tensor::new_empty(vec!["K", "N"], vec![K, N]);
-    let T0_KMN: Tensor = Tensor::new_empty(vec!["K", "M", "N"], vec![K, M, N]);
+    let K = 10;
+    let M = 10;
+    let N = 10;
+    let A_KM = Tensor::new_empty(vec!["K", "M"], vec![K as usize, M as usize]);
+    let B_KN = Tensor::new_empty(vec!["K", "N"], vec![K as usize, N as usize]);
+    let T0_KMN = Tensor::new_empty(
+        vec!["K", "M", "N"],
+        vec![K as usize, M as usize, N as usize],
+    );
     let t0_k: &mut EagerFiber = T0_KMN.get_root_mut();
     let a_k: &mut EagerFiber = A_KM.get_root_mut();
     let b_k: &mut EagerFiber = B_KN.get_root_mut();
@@ -54,10 +57,13 @@ pub fn main() -> Result<()> {
             }
         }
     }
-    let tmp0: Tensor = T0_KMN;
+    let tmp0 = T0_KMN;
     let tmp1: Tensor = tmp0.swizzle_ranks(vec!["M", "K", "N"]);
     let T0_MKN: Tensor = tmp1;
-    let T1_MKN: Tensor = Tensor::new_empty(vec!["M", "K", "N"], vec![M, K, N]);
+    let T1_MKN = Tensor::new_empty(
+        vec!["M", "K", "N"],
+        vec![M as usize, K as usize, N as usize],
+    );
     let mut t1_m: &mut EagerFiber = T1_MKN.get_root_mut();
     let t0_m: &mut EagerFiber = T0_MKN.get_root_mut();
     for (m, (t1_k, t0_k)) in (t1_m << t0_m) {
@@ -67,7 +73,7 @@ pub fn main() -> Result<()> {
             }
         }
     }
-    let Z_MN: Tensor = Tensor::new_empty(vec!["M", "N"], vec![M, N]);
+    let Z_MN = Tensor::new_empty(vec!["M", "N"], vec![M as usize, N as usize]);
     let z_m: &mut EagerFiber = Z_MN.get_root_mut();
     let T1_MNK: Tensor = T1_MKN.swizzle_ranks(vec!["M", "N", "K"]);
     t1_m = T1_MNK.get_root_mut();

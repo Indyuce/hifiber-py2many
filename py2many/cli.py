@@ -108,7 +108,7 @@ def _transpile(
         except Exception as e:
             import traceback
 
-            traceback.print_exception(e)
+            traceback.print_exception(e) # For debug
             formatted_lines = traceback.format_exc().splitlines()
             if isinstance(e, AstErrorBase):
                 print(f"{filename}:{e.lineno}:{e.col_offset}: {formatted_lines[-1]}")

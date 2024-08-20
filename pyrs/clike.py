@@ -60,9 +60,9 @@ class CLikeTranspiler(CommonCLikeTranspiler):
         op = self.visit(node.op)
         right = self.visit(node.right)
 
-        left_type = self._typename_from_annotation(node.left)
-        right_type = self._typename_from_annotation(node.right)
-        op_type = self._typename_from_annotation(node)
+        left_type = self.typename_from_annotation(node.left)
+        right_type = self.typename_from_annotation(node.right)
+        op_type = self.typename_from_annotation(node)
 
         left_rank = RUST_WIDTH_RANK.get(left_type, -1)
         right_rank = RUST_WIDTH_RANK.get(right_type, -1)
@@ -93,8 +93,8 @@ class CLikeTranspiler(CommonCLikeTranspiler):
             return self.visit_In(node)
 
         node_right = node.comparators[0]
-        left_type = self._typename_from_annotation(node.left)
-        right_type = self._typename_from_annotation(node_right)
+        left_type = self.typename_from_annotation(node.left)
+        right_type = self.typename_from_annotation(node_right)
 
         left = self.visit(node.left)
         op = self.visit(node.ops[0])

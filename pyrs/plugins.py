@@ -19,8 +19,6 @@ except:
 
 from py2many.analysis import get_id
 
-from .mappings import HIFIBER_MAPPINGS
-
 class RustTranspilerPlugins:
     def visit_argparse_dataclass(self, node):
         fields = []
@@ -133,22 +131,42 @@ class RustTranspilerPlugins:
         self._allows.add("unreachable_code")
         return f"std::process::exit({vargs[0]})"
     
-    def visit_Tensor_constructor(self, node, vargs: List[str]) -> str:
+    # Transpile Tensor initialization
+    def visit_Tensor_constructor(self, node) -> str:
 
-        if len(vargs) == 2:
-            # TODO check types of args
-            args = ", ".join(vargs)
-            return f"Tensor::new_empty({args})"
-        
+        vargs = []
+        assert len(node.keywords) >= 2
+
+        # First argument is always rank IDs
+        rank_ids = node.keywords[0]
+        assert rank_ids != None
+        vargs.append(self.visit(rank_ids.value))
+
+        # Second argument is always tensor shape
+        shape = node.keywords[1]
+        assert shape != None and isinstance(shape, ast.keyword)
+        assert isinstance(shape.value, ast.List)
+        if len(shape.value.elts) > 0:
+            elements = []
+            for e in shape.value.elts:
+                arg_type = self.typename_from_annotation(e)
+                elements.append(self.visit(e) + ("" if arg_type == 'usize' else ' as usize'))
+            vargs.append("vec![{0}]".format(", ".join(elements)))
         else:
-            # TODO check types of args
-            args = ", ".join(vargs)
-            return f"Tensor::new_empty_named({args})"
+            vargs.append("vec![]")
+        
+        if len(node.keywords) == 2:
+            return "Tensor::new_empty({0})".format(", ".join(vargs))
+        elif len(node.keywords) == 3:
+            vargs.append(self.visit(node.keywords[2]))
+            return "Tensor::new_empty_named({0})".format(", ".join(vargs))
+        else:
+            raise Exception("Tensor constructor takes 2 to 3 arguments")
 
     def visit_min_max(self, node, vargs, is_max: bool) -> str:
         self._usings.add("std::cmp")
         min_max = "max" if is_max else "min"
-        self._typename_from_annotation(node.args[0])
+        self.typename_from_annotation(node.args[0])
         if hasattr(node.args[0], "container_type"):
             node.result_type = True
             return f"{vargs[0]}.iter().{min_max}()"
@@ -199,19 +217,18 @@ SMALL_USINGS_MAP = {
     "asyncio.run": "futures::executor::block_on",
 }
 
+
+# HiFiber mappings TODO
+HARD_DISPATCH_MAP = {
+    "Tensor": RustTranspilerPlugins.visit_Tensor_constructor,
+}
+
 DISPATCH_MAP = {
     "max": functools.partial(RustTranspilerPlugins.visit_min_max, is_max=True),
     "min": functools.partial(RustTranspilerPlugins.visit_min_max, is_max=False),
     "range": RustTranspilerPlugins.visit_range,
     "xrange": RustTranspilerPlugins.visit_range,
     "print": RustTranspilerPlugins.visit_print,
-
-    # HiFiber mappings
-    "Tensor": RustTranspilerPlugins.visit_Tensor_constructor,
-}
-
-MODULE_DISPATCH_TABLE = {
-    "tempfile.NamedTemporaryFile": "tempfile::NamedTempFile"
 }
 
 DECORATOR_DISPATCH_TABLE = {ap_dataclass: RustTranspilerPlugins.visit_ap_dataclass}
@@ -259,11 +276,85 @@ FUNC_USINGS_MAP = {
     random.random: "pylib",
 }
 
-# Register classes inside of module dispatch table.
-for key in HIFIBER_MAPPINGS:
-    hifiber_class = HIFIBER_MAPPINGS[key]
-    if hifiber_class == None:
-        continue
+CLASS_DISPATCH_TABLE = {
+    'fibertree.Tensor': {
+        "path": "hifiber::core::tensor::Tensor",
+        "methods": {
+            "swizzleRanks": {
+                "name": "swizzle_ranks",
+                "return_type": "hifiber::core::tensor::Tensor",
+            },
+            "getRoot": {
+                "name": "get_root_mut",
+                "return_type": "&mut hifiber::core::eager::EagerFiber",
+                "hide_annotation": True,
+            },
+            "setRankIds": {
+                "name": "set_rank_ids",
+                "return_type": None,
+            },
+        }
+    },
+    
+    'fibertree.Fiber': {
+        "path": "hifiber::core::eager::EagerFiber",
+    },
+    'fibertree.Metrics': None,
+    'teaal.parse.Einsum': None,
+    'teaal.parse.Mapping': None,
+    'teaal.parse.Architecture': None,
+    'teaal.parse.Bindings': None,
+    'teaal.parse.Format': None,
 
-    hifiber_class_path = hifiber_class["path"]
-    MODULE_DISPATCH_TABLE[key] = hifiber_class_path
+    
+    "tempfile.NamedTemporaryFile": {
+        "path": "tempfile::NamedTempFile",
+    }
+}
+
+def contract_type_name(type_name) -> str:
+    type_name_split = type_name.split("::")
+    ref_type = type_name_split[0].split(" ")[0]
+    object_type = type_name_split[-1]
+
+    if ref_type.startswith('&'):
+        return ref_type +' ' + object_type
+    else:
+        return object_type
+
+def extract_type_object(type_name) -> str:
+    return type_name.split(" ")[-1]
+
+def map_import(class_path):
+    if class_path in CLASS_DISPATCH_TABLE:
+        rs_class = CLASS_DISPATCH_TABLE[class_path]
+        rs_class_path = rs_class["path"]
+        return rs_class_path
+    else:
+        return None
+
+def py_method_name_to_rs_method(py_method_name):
+    for py_class_path in CLASS_DISPATCH_TABLE:
+        py_class = CLASS_DISPATCH_TABLE[py_class_path]
+        if py_class == None:
+            continue
+
+        py_method_names = py_class.get("methods")
+        if py_method_names == None:
+            continue
+
+        if py_method_name in py_method_names:
+            return py_class["methods"][py_method_name]
+    
+    return None
+
+def py_class_name_to_rs_class(py_class_name):
+    for py_class_path in CLASS_DISPATCH_TABLE:
+        _py_class_name = py_class_path.split(".")[-1]
+        if _py_class_name == py_class_name:
+            return CLASS_DISPATCH_TABLE[py_class_path]
+            #rs_class_path = HIFIBER_CLASSES[py_class_path]["path"]
+            #rs_class_name = rs_class_path.split("::")[-1]
+            #return rs_class_name
+
+    return None

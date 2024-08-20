@@ -5,12 +5,12 @@
 - [x] Map function and constructors to existing HiFiber classes.
 - [x] Fix constructor of `Tensor` class
 - [ ] All tensors must be mutable. Check what `mutability_transformer.py` does and adapt it to HiFiber.
-- [ ] Problems with integer types. Replace `i32`'s with `usize`'s
 - [x] Add basic HiFiber class/method mapping
 - [x] Support HiFiber types in type inference
 - [ ] Ability to hide annotations.
 - [x] Assignments should register new usings
 - [ ] Delete redundant usings
+- [x] Validate arguments of Tensor constructor.
 
 ## Future issues to address
 
@@ -18,6 +18,7 @@
 - [ ] Merge c-like transpiler with rust transpiler classes
 - [ ] Investigate if MonkeyType can help provide annotations that you cannot provide otherwise
 - [ ] Do not call mutable getters unless necessary
+- [ ] Merge handling of constructors and class methods
 
 There are multiple pass but only one abstract syntax tree type. Extra data from successive passes only store data directly inside of Python object dictionaries of ast Nodes.
 

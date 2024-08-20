@@ -135,6 +135,7 @@ class CLikeTranspiler(ast.NodeVisitor):
         self._extension = False
         self._ignored_module_set = IGNORED_MODULE_SET.copy()
         self._module = None
+        self._hard_dispatch_map = {}
         self._dispatch_map = {}
         self._small_dispatch_map = {}
         self._small_usings_map = {}
@@ -220,7 +221,7 @@ class CLikeTranspiler(ast.NodeVisitor):
             return self._default_type
         return self._combine_value_index(value_type, index_type)
 
-    def _typename_from_type_node(self, node) -> Union[List, str, None]:
+    def typename_from_type_node(self, node) -> Union[List, str, None]:
         if isinstance(node, ast.Name):
             return self._map_type(
                 get_id(node), getattr(node, "lifetime", LifeTime.UNKNOWN)
@@ -230,7 +231,7 @@ class CLikeTranspiler(ast.NodeVisitor):
         elif isinstance(node, ast.ClassDef):
             return get_id(node)
         elif isinstance(node, ast.Tuple):
-            return [self._typename_from_type_node(e) for e in node.elts]
+            return [self.typename_from_type_node(e) for e in node.elts]
         elif isinstance(node, ast.Attribute):
             node_id = get_id(node)
             if node_id.startswith("typing."):
@@ -242,14 +243,14 @@ class CLikeTranspiler(ast.NodeVisitor):
             # And return a target specific type
             slice_value = self._slice_value(node)
             (value_type, index_type) = tuple(
-                map(self._typename_from_type_node, (node.value, slice_value))
+                map(self.typename_from_type_node, (node.value, slice_value))
             )
             value_type = self._map_container_type(value_type)
             node.container_type = (value_type, index_type)
             return self._combine_value_index(value_type, index_type)
         return self._default_type
 
-    def _generic_typename_from_type_node(self, node) -> Union[List, str, None]:
+    def generic_typename_from_type_node(self, node) -> Union[List, str, None]:
         if isinstance(node, ast.Name):
             return get_id(node)
         elif isinstance(node, ast.Constant):
@@ -257,7 +258,7 @@ class CLikeTranspiler(ast.NodeVisitor):
         elif isinstance(node, ast.ClassDef):
             return get_id(node)
         elif isinstance(node, ast.Tuple):
-            return [self._generic_typename_from_type_node(e) for e in node.elts]
+            return [self.generic_typename_from_type_node(e) for e in node.elts]
         elif isinstance(node, ast.Attribute):
             node_id = get_id(node)
             if node_id.startswith("typing."):
@@ -266,18 +267,18 @@ class CLikeTranspiler(ast.NodeVisitor):
         elif isinstance(node, ast.Subscript):
             slice_value = self._slice_value(node)
             (value_type, index_type) = tuple(
-                map(self._generic_typename_from_type_node, (node.value, slice_value))
+                map(self.generic_typename_from_type_node, (node.value, slice_value))
             )
             node.generic_container_type = (value_type, index_type)
             return f"{value_type}[{index_type}]"
         return self._default_type
 
-    def _typename_from_annotation(self, node, attr="annotation") -> str:
+    def typename_from_annotation(self, node, attr="annotation") -> str:
         default_type = self._default_type
         typename = default_type
         if hasattr(node, attr):
             type_node = getattr(node, attr)
-            typename = self._typename_from_type_node(type_node)
+            typename = self.typename_from_type_node(type_node)
             if isinstance(type_node, ast.Subscript):
                 node.container_type = type_node.container_type
                 try:
@@ -288,14 +289,14 @@ class CLikeTranspiler(ast.NodeVisitor):
                 raise AstCouldNotInfer(type_node, node)
         return typename
 
-    def _generic_typename_from_annotation(
+    def generic_typename_from_annotation(
         self, node, attr="annotation"
     ) -> Optional[str]:
         """Unlike the one above, this doesn't do any target specific mapping."""
         typename = None
         if hasattr(node, attr):
             type_node = getattr(node, attr)
-            ret = self._generic_typename_from_type_node(type_node)
+            ret = self.generic_typename_from_type_node(type_node)
             if isinstance(type_node, ast.Subscript):
                 node.generic_container_type = type_node.generic_container_type
             return ret
@@ -553,7 +554,7 @@ class CLikeTranspiler(ast.NodeVisitor):
         ):
             type_str = self._default_type
         else:
-            type_str = self._typename_from_annotation(node)
+            type_str = self.typename_from_annotation(node)
         val = self.visit(node.value) if node.value is not None else None
         return (target, type_str, val)
 
@@ -692,6 +693,11 @@ class CLikeTranspiler(ast.NodeVisitor):
             return tuple(splits)
         else:
             return ("", splits[0])
+
+    def _hard_dispatch(self, node, fname: str) -> Optional[str]:
+        if fname in self._hard_dispatch_map:
+            return self._hard_dispatch_map[fname](self, node)
+        return None
 
     def _dispatch(self, node, fname: str, vargs: List[str]) -> Optional[str]:
 

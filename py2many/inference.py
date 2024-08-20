@@ -199,7 +199,7 @@ class InferTypesTransformer(ast.NodeTransformer):
                 LifeTime.STATIC if type(node.value) == str else LifeTime.UNKNOWN
             )
         self.generic_visit(node)
-        #node.annotation.hide = True # Always hide annotations on constants
+        node.annotation.hide = True # Always hide annotations on constants
         return node
 
     def visit_Name(self, node):
@@ -260,7 +260,7 @@ class InferTypesTransformer(ast.NodeTransformer):
 
             def typename(e):
                 get_inferred_type(e)  # populates e.annotation
-                return self._clike._generic_typename_from_annotation(e)
+                return self._clike.generic_typename_from_annotation(e)
 
             key_types = set([typename(e) for e in node.keys])
             only_key_type = next(iter(key_types))
@@ -320,11 +320,11 @@ class InferTypesTransformer(ast.NodeTransformer):
 
         node.target.annotation = node.annotation
         target = node.target
-        target_typename = self._clike._typename_from_annotation(target)
+        target_typename = self._clike.typename_from_annotation(target)
         if target_typename in self.FIXED_WIDTH_INTS_NAME:
             self.has_fixed_width_ints = True
         annotation = get_inferred_type(node.value)
-        value_typename = self._clike._generic_typename_from_type_node(annotation)
+        value_typename = self._clike.generic_typename_from_type_node(annotation)
         target_class = class_for_typename(target_typename, None)
         value_class = class_for_typename(value_typename, None)
         if (
@@ -551,7 +551,7 @@ class InferTypesTransformer(ast.NodeTransformer):
     def visit_Subscript(self, node):
         definition = node.scopes.find(get_id(node.value))
         if hasattr(definition, "annotation"):
-            self._clike._typename_from_annotation(definition)
+            self._clike.typename_from_annotation(definition)
             if hasattr(definition, "container_type"):
                 container_type, element_type = definition.container_type
                 if container_type == "Dict" or isinstance(element_type, list):

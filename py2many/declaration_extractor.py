@@ -31,7 +31,7 @@ class DeclarationExtractor(ast.NodeVisitor):
 
         for member, value in self.member_assignments.items():
             if member not in typed_members:
-                typed_members[member] = self.transpiler._typename_from_annotation(value)
+                typed_members[member] = self.transpiler.typename_from_annotation(value)
 
         typed_members = {self._maybe_rename_key(k): v for k, v in typed_members.items()}
         return typed_members
@@ -48,7 +48,7 @@ class DeclarationExtractor(ast.NodeVisitor):
         for member, value in self.member_assignments.items():
             if member not in typed_members:
                 typed_members[member] = (
-                    self.transpiler._typename_from_annotation(value),
+                    self.transpiler.typename_from_annotation(value),
                     None,
                 )
 
@@ -95,7 +95,7 @@ class DeclarationExtractor(ast.NodeVisitor):
         if isinstance(node.annotation, ast.Constant):
             type_str = node.annotation.value
         if type_str is None:
-            type_str = self.transpiler._typename_from_annotation(node)
+            type_str = self.transpiler.typename_from_annotation(node)
         if target_id not in self.annotated_members:
             self.annotated_members[target_id] = (type_str, node.value)
 
@@ -105,7 +105,7 @@ class DeclarationExtractor(ast.NodeVisitor):
                 self.class_assignments[target] = node.value
 
         if dataclass:
-            type_str = self.transpiler._typename_from_annotation(node)
+            type_str = self.transpiler.typename_from_annotation(node)
             if target_id not in self.annotated_members:
                 self.annotated_members[target_id] = (type_str, node.value)
 

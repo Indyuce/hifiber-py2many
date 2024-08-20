@@ -18,7 +18,7 @@ from py2many.clike import class_for_typename
 from py2many.exceptions import AstUnrecognisedBinOp
 from py2many.inference import InferTypesTransformer, get_inferred_type, is_reference
 
-from .mappings import py_class_name_to_rs_class, py_method_name_to_rs_method, contract_type_name
+from .plugins import py_class_name_to_rs_class, py_method_name_to_rs_method, contract_type_name
 
 RUST_TYPE_MAP = {
     int: "i32",
@@ -194,7 +194,7 @@ class InferRustTypesTransformer(ast.NodeTransformer):
             if rs_class != None:
                 rs_class_name = rs_class["path"].split("::")[-1]
                 node.annotation = ast.Name(id=rs_class_name)
-                #node.annotation.hide = True
+                node.annotation.hide = True # 
                 return node
         
         # Methods with object callers

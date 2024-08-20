@@ -10,10 +10,7 @@ CI = os.environ.get("CI", "0")
 if CI in ["1", "true"]:  # pragma: no cover
     from .pyrs import settings as rust_settings
 else:
-    try:  # pragma: no cover
-        from .pyrs import settings as rust_settings
-    except ImportError:
-        from pyrs import settings as rust_settings
+    from pyrs import settings as rust_settings
 
 
 PY2MANY_DIR = pathlib.Path(__file__).parent

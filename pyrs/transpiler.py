@@ -17,8 +17,8 @@ from py2many.inference import is_reference
 from py2many.rewriters import camel_case
 from py2many.tracer import defined_before, is_class_or_module, is_list
 
-from .mappings import py_method_name_to_rs_method, extract_type_object
 from .clike import CLikeTranspiler
+from .plugins import CLASS_DISPATCH_TABLE, py_method_name_to_rs_method, extract_type_object
 from .inference import get_inferred_rust_type, map_type
 from .plugins import (
     ATTR_DISPATCH_TABLE,
@@ -26,7 +26,7 @@ from .plugins import (
     DISPATCH_MAP,
     FUNC_DISPATCH_TABLE,
     FUNC_USINGS_MAP,
-    MODULE_DISPATCH_TABLE,
+    HARD_DISPATCH_MAP,
     SMALL_DISPATCH_MAP,
     SMALL_USINGS_MAP,
 )
@@ -92,6 +92,7 @@ class RustTranspiler(CLikeTranspiler):
         self._extension = extension
         self._rust_ignored_module_set = {"argparse_dataclass"}
         self._no_prologue = no_prologue
+        self._hard_dispatch_map = HARD_DISPATCH_MAP
         self._dispatch_map = DISPATCH_MAP
         self._small_dispatch_map = SMALL_DISPATCH_MAP
         self._small_usings_map = SMALL_USINGS_MAP
@@ -231,14 +232,14 @@ class RustTranspiler(CLikeTranspiler):
 
         return_type = "" if not is_python_main else "-> Result<()>"
         if node.returns:
-            typename = self._typename_from_annotation(node, attr="returns")
+            typename = self.typename_from_annotation(node, attr="returns")
             if getattr(node.returns, "rust_needs_reference", False):
                 typename = f"&{typename}"
             if getattr(node, "rust_pyresult_type", False):
                 if node.no_return:
                     typename = None
                 else:
-                    typename = self._generic_typename_from_type_node(node.returns)
+                    typename = self.generic_typename_from_type_node(node.returns)
                 typename = map_type(typename, extension=True, return_type=True)
             if typename != "_":
                 return_type = f"-> {typename}"
@@ -266,9 +267,9 @@ class RustTranspiler(CLikeTranspiler):
         typename = "T"
         if node.annotation:
             if not self._extension:
-                typename = self._typename_from_annotation(node)
+                typename = self.typename_from_annotation(node)
             else:
-                typename = self._generic_typename_from_annotation(node)
+                typename = self.generic_typename_from_annotation(node)
                 typename = map_type(typename, extension=True)
             mut = "mut " if is_mutable(node.scopes, id) else ""
             # TODO: Should we make this if not primitive instead of checking
@@ -293,7 +294,7 @@ class RustTranspiler(CLikeTranspiler):
                     if ret.startswith("&"):
                         ret = ret[1:]
                     ret = f"Ok({ret})"
-                return_type = self._typename_from_annotation(fndef, attr="returns")
+                return_type = self.typename_from_annotation(fndef, attr="returns")
                 value_type = get_inferred_rust_type(node.value)
                 if is_reference(node.value) and not getattr(
                     fndef.returns, "rust_needs_reference", True
@@ -379,24 +380,29 @@ class RustTranspiler(CLikeTranspiler):
         if isinstance(fndef, ast.ClassDef):
             return self._visit_struct_literal(node, fname, fndef)
 
+        # Static and util methods which consume arguments as nodes.
+        ret = self._hard_dispatch(node, fname)
+        node_result_type = getattr(node, "result_type", False)
+        node_func_result_type = getattr(node.func, "result_type", False)
+        if ret is not None:
+            unwrap = "?" if node_result_type or node_func_result_type else ""
+            return f"{ret}{unwrap}"
+
         vargs = []  # visited args
         if node.args:
             vargs += [self.visit(a) for a in node.args]
         if node.keywords:
             vargs += [self.visit(kw.value) for kw in node.keywords]
 
-        # Static and util methods are dispatched here.
-        # Constructors can also be dispatched using this.
+        # Static and util methods which consumes arguments already as strings.
         ret = self._dispatch(node, fname, vargs)
-        node_result_type = getattr(node, "result_type", False)
-        node_func_result_type = getattr(node.func, "result_type", False)
         if ret is not None:
             if ret.startswith("std::process::exit("):
                 node_result_type = False
             unwrap = "?" if node_result_type or node_func_result_type else ""
             return f"{ret}{unwrap}"
         
-        # Method call with caller object.
+        # Method call with caller object. Adapt method name.
         # TODO check type of caller
         if isinstance(node.func, ast.Attribute):
             rs_method = py_method_name_to_rs_method(node.func.attr)
@@ -442,7 +448,7 @@ class RustTranspiler(CLikeTranspiler):
         right = self.visit(node.comparators[0])
 
         if hasattr(node.comparators[0], "annotation"):
-            self._generic_typename_from_annotation(node.comparators[0])
+            self.generic_typename_from_annotation(node.comparators[0])
             value_type = getattr(
                 node.comparators[0].annotation, "generic_container_type", None
             )
@@ -676,10 +682,11 @@ class RustTranspiler(CLikeTranspiler):
 
         for name in names:
             lookup = f"{module_name}.{name}"
-            rust_use = MODULE_DISPATCH_TABLE[lookup]
-            if rust_use == None:
+            rs_class = CLASS_DISPATCH_TABLE[lookup]
+            if rs_class == None:
                 raise Exception(f"Could not find mapping for import '{lookup}'")
-            rust_uses.append(f"use {rust_use};")
+            rs_class_path = rs_class["path"]
+            rust_uses.append(f"use {rs_class_path};")
 
         #if lookup in MODULE_DISPATCH_TABLE:
         #    rust_use = MODULE_DISPATCH_TABLE[lookup]
@@ -695,7 +702,6 @@ class RustTranspiler(CLikeTranspiler):
         if len(node.elts) > 0:
             elements = [self.visit(e) for e in node.elts]
             return "vec![{0}]".format(", ".join(elements))
-
         else:
             return "vec![]"
 
@@ -727,7 +733,7 @@ class RustTranspiler(CLikeTranspiler):
                 return "({0})".format(index)
             return "{0}<{1}>".format(value, index)
         # TODO: optimize this. We need to compute value_type once per definition
-        self._generic_typename_from_annotation(node.value)
+        self.generic_typename_from_annotation(node.value)
         if hasattr(node.value, "annotation"):
             value_type = getattr(node.value.annotation, "generic_container_type", None)
             is_list = value_type is not None and value_type[0] == "List"
@@ -785,10 +791,10 @@ class RustTranspiler(CLikeTranspiler):
     def _needs_cast(self, left, right) -> bool:
         if not hasattr(left, "annotation") or not hasattr(right, "annotation"):
             return False
-        left_type = self._typename_from_annotation(left)
+        left_type = self.typename_from_annotation(left)
         # populate right.rust_annotation
         get_inferred_rust_type(right)
-        right_type = self._typename_from_annotation(right)
+        right_type = self.typename_from_annotation(right)
         return left_type != right_type and left_type != self._default_type
 
     def _assign_cast(
@@ -805,7 +811,7 @@ class RustTranspiler(CLikeTranspiler):
 
         needs_cast = self._needs_cast(target, node.value)
         if needs_cast:
-            target_type = self._typename_from_annotation(target)
+            target_type = self.typename_from_annotation(target)
             value = self._assign_cast(
                 value, target_type, target.annotation, node.value.rust_annotation
             )
@@ -836,7 +842,7 @@ class RustTranspiler(CLikeTranspiler):
             target_str = self.visit(target)
             value = self.visit(node.value)
             if needs_cast:
-                target_type = self._typename_from_annotation(target)
+                target_type = self.typename_from_annotation(target)
                 value = self._assign_cast(
                     value, target_type, target.annotation, node.value.rust_annotation
                 )
@@ -846,7 +852,7 @@ class RustTranspiler(CLikeTranspiler):
             target = self.visit(target)
             value = self.visit(node.value)
             # populate node.value.container_type
-            self._typename_from_annotation(node.value)
+            self.typename_from_annotation(node.value)
             # Use arrays instead of Vec as globals must have fixed size
             if value.startswith("vec!"):
                 value = value.replace("vec!", "&")
@@ -857,7 +863,7 @@ class RustTranspiler(CLikeTranspiler):
         elif isinstance(node.value, ast.Set) and kw.startswith("pub "):
             target = self.visit(target)
             value = self.visit(node.value)
-            typename = self._typename_from_annotation(node.value)
+            typename = self.typename_from_annotation(node.value)
 
             self._usings.add("lazy_static::lazy_static")
             if "str" in typename:
@@ -866,7 +872,7 @@ class RustTranspiler(CLikeTranspiler):
         elif isinstance(node.value, ast.Dict) and kw.startswith("pub "):
             target = self.visit(target)
             value = self.visit(node.value)
-            typename = self._typename_from_annotation(node.value)
+            typename = self.typename_from_annotation(node.value)
 
             self._usings.add("lazy_static::lazy_static")
             if hasattr(node.value, "container_type"):
@@ -882,8 +888,7 @@ class RustTranspiler(CLikeTranspiler):
         
         # General case
         else:
-            typename = self._typename_from_annotation(target)
-            print(f"typename {ast.dump(target)} -> {typename}")
+            typename = self.typename_from_annotation(target)
             needs_cast = self._needs_cast(target, node.value)
             target_str = self.visit(target)
             value = self.visit(node.value)
