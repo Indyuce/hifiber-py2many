@@ -17,6 +17,7 @@ from py2many.inference import is_reference
 from py2many.rewriters import camel_case
 from py2many.tracer import defined_before, is_class_or_module, is_list
 
+from .mappings import py_method_name_to_rs_method
 from .clike import CLikeTranspiler
 from .inference import get_inferred_rust_type, map_type
 from .plugins import (
@@ -29,7 +30,6 @@ from .plugins import (
     SMALL_DISPATCH_MAP,
     SMALL_USINGS_MAP,
 )
-
 
 class RustLoopIndexRewriter(ast.NodeTransformer):
     def visit_For(self, node):
@@ -110,7 +110,7 @@ class RustTranspiler(CLikeTranspiler):
             set(mod.split("::")[0] for mod in usings if not mod.startswith("std:"))
         )
         crates = [dep.replace("-", "_") for dep in deps]
-        externs = [f"extern crate {dep};" for dep in crates]
+        externs = []#[f"extern crate {dep};" for dep in crates]
         externs += [f"mod {dep};" for dep in self._rust_mods]
         deps_str = "\n//! ".join([f'{dep} = "*"' for dep in deps])
         externs = "\n".join(externs)
@@ -215,7 +215,7 @@ class RustTranspiler(CLikeTranspiler):
 
         is_python_main = getattr(node, "python_main", False)
         if is_python_main:
-            self._usings.add("anyhow::Result")
+            self._usings.add("std::io::Result")
 
         typedecls = []
         index = 0
@@ -385,6 +385,8 @@ class RustTranspiler(CLikeTranspiler):
         if node.keywords:
             vargs += [self.visit(kw.value) for kw in node.keywords]
 
+        # Static and util methods are dispatched here.
+        # HiFiber constructors are dispatched using this
         ret = self._dispatch(node, fname, vargs)
         node_result_type = getattr(node, "result_type", False)
         node_func_result_type = getattr(node.func, "result_type", False)
@@ -393,6 +395,15 @@ class RustTranspiler(CLikeTranspiler):
                 node_result_type = False
             unwrap = "?" if node_result_type or node_func_result_type else ""
             return f"{ret}{unwrap}"
+        
+        # Method call with caller object.
+        # TODO check type of caller
+        fname_split = fname.split(".", 1)
+        assert len(fname_split) in [1, 2]
+        if len(fname_split) == 2:
+            rs_method = py_method_name_to_rs_method(fname_split[1])
+            if rs_method != None:
+                fname = fname_split[0] + '.' + rs_method["name"]
 
         # Check if some args need to be passed by reference
         ref_args = []
@@ -404,8 +415,8 @@ class RustTranspiler(CLikeTranspiler):
                     ref_args.append(varg)
         else:
             ref_args = vargs
-
         args = ", ".join(ref_args)
+
         unwrap = "?" if node_result_type or node_func_result_type else ""
         return f"{fname}({args}){unwrap}"
 
@@ -654,20 +665,30 @@ class RustTranspiler(CLikeTranspiler):
     def _import_from(self, module_name: str, names: List[str], level: int = 0) -> str:
         if module_name in self._rust_ignored_module_set:
             return ""
+        
         if level > 0:
             self._rust_mods.add(module_name)
         else:
             self._usings.add(module_name)
-        if len(names) == 1:
-            # TODO: make this more generic so it works for len(names) > 1
-            name = names[0]
+
+        # TODO transform list into tree and turn it into a string
+        rust_uses = []
+
+        for name in names:
             lookup = f"{module_name}.{name}"
-            if lookup in MODULE_DISPATCH_TABLE:
-                rust_use = MODULE_DISPATCH_TABLE[lookup]
-                return f"use {rust_use};"
-        module_name = module_name.replace(".", "::")
-        names = ", ".join(names)
-        return f"use {module_name}::{{{names}}};"
+            rust_use = MODULE_DISPATCH_TABLE[lookup]
+            if rust_use == None:
+                raise Exception(f"Could not find mapping for import '{lookup}'")
+            rust_uses.append(f"use {rust_use};")
+
+        #if lookup in MODULE_DISPATCH_TABLE:
+        #    rust_use = MODULE_DISPATCH_TABLE[lookup]
+        #    return f"use {rust_use};"
+        #module_name = module_name.replace(".", "::")
+        #names = ", ".join(names)
+        #return f"use {module_name}::{{{names}}};"
+
+        return "\n".join(rust_uses)
 
     def visit_List(self, node) -> str:
         self._usings.add("std::collections")
@@ -858,9 +879,13 @@ class RustTranspiler(CLikeTranspiler):
                 typename = f"{key_typename}, {value_typename}"
 
             return f"lazy_static! {{ pub static ref {target}: HashMap<{typename}> = {value}; }}"
+        
+        # General case
         else:
             typename = self._typename_from_annotation(target)
             needs_cast = self._needs_cast(target, node.value)
+            
+            # TODO hide annotations?
             target_str = self.visit(target)
             value = self.visit(node.value)
             if needs_cast:
@@ -871,11 +896,16 @@ class RustTranspiler(CLikeTranspiler):
                 mut = "mut " if is_mutable(node.scopes, target_str) else ""
                 typename = f"&{mut}{typename}"
                 value = f"&{mut}{value}"
-            optional_typename = (
-                f": {typename}" if typename != self._default_type else ""
-            )
+            
+            optional_typename = f": {typename}" \
+                if (not self.hides_annotation(node.value)) and (typename != self._default_type) \
+                else ""
+            
             return f"{kw} {target_str}{optional_typename} = {value};"
 
+    def hides_annotation(self, node) -> bool:
+        return hasattr(node, "annotation") and getattr(node.annotation, "hide", False)
+    
     def visit_Delete(self, node) -> str:
         target = node.targets[0]
         target_str = self.visit(target)

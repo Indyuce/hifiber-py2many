@@ -18,6 +18,8 @@ from py2many.clike import class_for_typename
 from py2many.exceptions import AstUnrecognisedBinOp
 from py2many.inference import InferTypesTransformer, get_inferred_type, is_reference
 
+from .mappings import py_class_name_to_rs_class, py_method_name_to_rs_method, contract_type_name
+
 RUST_TYPE_MAP = {
     int: "i32",
     float: "f64",
@@ -180,6 +182,35 @@ class InferRustTypesTransformer(ast.NodeTransformer):
         node.rust_pyresult_type = self._extension
         self.generic_visit(node)
         return node
+    
+    def visit_Call(self, node):
+        if hasattr(node, "annotation"):
+            return node
+    
+
+        # Constructors TODO check if class is imported.
+        if isinstance(node.func, ast.Name):
+            fname = node.func.id
+            rs_class = py_class_name_to_rs_class(fname)
+            if rs_class != None:
+                rs_class_name = rs_class["path"].split("::")[-1]
+                node.annotation = ast.Name(id=rs_class_name)
+                #node.annotation.hide = True
+                return node
+        
+        # Methods with object callers
+        # TODO check caller and check if method is imported
+        elif isinstance(node.func, ast.Attribute):
+            rs_method = py_method_name_to_rs_method(node.func.attr)
+            if rs_method != None:
+                contracted_return_type = contract_type_name(rs_method["return_type"])
+                node.annotation = ast.Name(id=contracted_return_type)
+                #if bool(rs_method.get("hide_annotation")):
+                #    node.annotation.hide = True
+                return node
+        
+        else:
+            raise Exception(f"Could not infer return type of call {ast.dump(node)}")
 
     def visit_Return(self, node):
         self.generic_visit(node)

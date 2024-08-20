@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import time
+import traceback
 
 # Fixed width ints and aliases
 from ctypes import c_int8 as i8
@@ -311,6 +312,7 @@ class CLikeTranspiler(ast.NodeVisitor):
             except AstNotImplementedError:
                 raise
             except Exception as e:
+                traceback.print_exception(e)
                 raise AstNotImplementedError(e, node) from e
 
     def visit_Pass(self, node) -> str:
@@ -692,6 +694,7 @@ class CLikeTranspiler(ast.NodeVisitor):
             return ("", splits[0])
 
     def _dispatch(self, node, fname: str, vargs: List[str]) -> Optional[str]:
+
         if fname in self._dispatch_map:
             try:
                 return self._dispatch_map[fname](self, node, vargs)

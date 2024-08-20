@@ -108,6 +108,7 @@ def _transpile(
         except Exception as e:
             import traceback
 
+            traceback.print_exception(e)
             formatted_lines = traceback.format_exc().splitlines()
             if isinstance(e, AstErrorBase):
                 print(f"{filename}:{e.lineno}:{e.col_offset}: {formatted_lines[-1]}")
@@ -424,7 +425,7 @@ def main(args=None, env=os.environ):
         print("extension supported only with rust via pyo3")
         return -1
 
-    settings_func = ALL_SETTINGS["cpp"]
+    settings_func = ALL_SETTINGS["rust"]
     for lang, func in ALL_SETTINGS.items():
         arg = getattr(args, lang)
         if arg:

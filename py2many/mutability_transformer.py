@@ -29,6 +29,7 @@ class MutabilityTransformer(ast.NodeTransformer):
             if count > 1:
                 mutable_vars.append(var)
         node.mutable_vars = mutable_vars
+
         return node
 
     def visit_Assign(self, node):

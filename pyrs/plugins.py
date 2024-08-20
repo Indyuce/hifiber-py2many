@@ -19,6 +19,7 @@ except:
 
 from py2many.analysis import get_id
 
+from .mappings import HIFIBER_MAPPINGS
 
 class RustTranspilerPlugins:
     def visit_argparse_dataclass(self, node):
@@ -131,6 +132,18 @@ class RustTranspilerPlugins:
     def visit_exit(self, node, vargs) -> str:
         self._allows.add("unreachable_code")
         return f"std::process::exit({vargs[0]})"
+    
+    def visit_Tensor_constructor(self, node, vargs: List[str]) -> str:
+
+        if len(vargs) == 2:
+            # TODO check types of args
+            args = ", ".join(vargs)
+            return f"Tensor::new_empty({args})"
+        
+        else:
+            # TODO check types of args
+            args = ", ".join(vargs)
+            return f"Tensor::new_empty_named({args})"
 
     def visit_min_max(self, node, vargs, is_max: bool) -> str:
         self._usings.add("std::cmp")
@@ -192,9 +205,14 @@ DISPATCH_MAP = {
     "range": RustTranspilerPlugins.visit_range,
     "xrange": RustTranspilerPlugins.visit_range,
     "print": RustTranspilerPlugins.visit_print,
+
+    # HiFiber mappings
+    "Tensor": RustTranspilerPlugins.visit_Tensor_constructor,
 }
 
-MODULE_DISPATCH_TABLE = {"tempfile.NamedTemporaryFile": "tempfile::NamedTempFile"}
+MODULE_DISPATCH_TABLE = {
+    "tempfile.NamedTemporaryFile": "tempfile::NamedTempFile"
+}
 
 DECORATOR_DISPATCH_TABLE = {ap_dataclass: RustTranspilerPlugins.visit_ap_dataclass}
 
@@ -240,3 +258,12 @@ FUNC_USINGS_MAP = {
     random.seed: "pylib",
     random.random: "pylib",
 }
+
+# Register classes inside of module dispatch table.
+for key in HIFIBER_MAPPINGS:
+    hifiber_class = HIFIBER_MAPPINGS[key]
+    if hifiber_class == None:
+        continue
+
+    hifiber_class_path = hifiber_class["path"]
+    MODULE_DISPATCH_TABLE[key] = hifiber_class_path

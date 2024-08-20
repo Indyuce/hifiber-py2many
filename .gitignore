@@ -31,3 +31,5 @@ target/
 Cargo.lock
 go.mod
 go.sum
+.venv
+venv

@@ -186,6 +186,7 @@ class InferTypesTransformer(ast.NodeTransformer):
             annotation = ast.Name(id=str(t))
         elif t != type(None):
             raise NotImplementedError(f"{t} not found in TYPE_DICT")
+        #print(value, '->', t, ast.dump(annotation))
         return annotation
 
     def visit_NameConstant(self, node):
@@ -198,6 +199,7 @@ class InferTypesTransformer(ast.NodeTransformer):
                 LifeTime.STATIC if type(node.value) == str else LifeTime.UNKNOWN
             )
         self.generic_visit(node)
+        #node.annotation.hide = True # Always hide annotations on constants
         return node
 
     def visit_Name(self, node):
