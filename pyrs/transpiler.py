@@ -17,7 +17,7 @@ from py2many.inference import is_reference
 from py2many.rewriters import camel_case
 from py2many.tracer import defined_before, is_class_or_module, is_list
 
-from .mappings import py_method_name_to_rs_method
+from .mappings import py_method_name_to_rs_method, extract_type_object
 from .clike import CLikeTranspiler
 from .inference import get_inferred_rust_type, map_type
 from .plugins import (
@@ -386,7 +386,7 @@ class RustTranspiler(CLikeTranspiler):
             vargs += [self.visit(kw.value) for kw in node.keywords]
 
         # Static and util methods are dispatched here.
-        # HiFiber constructors are dispatched using this
+        # Constructors can also be dispatched using this.
         ret = self._dispatch(node, fname, vargs)
         node_result_type = getattr(node, "result_type", False)
         node_func_result_type = getattr(node.func, "result_type", False)
@@ -398,12 +398,12 @@ class RustTranspiler(CLikeTranspiler):
         
         # Method call with caller object.
         # TODO check type of caller
-        fname_split = fname.split(".", 1)
-        assert len(fname_split) in [1, 2]
-        if len(fname_split) == 2:
-            rs_method = py_method_name_to_rs_method(fname_split[1])
+        if isinstance(node.func, ast.Attribute):
+            rs_method = py_method_name_to_rs_method(node.func.attr)
             if rs_method != None:
-                fname = fname_split[0] + '.' + rs_method["name"]
+                fname = node.func.value.id + '.' + rs_method["name"]
+                # Add return type to usings
+                self._usings.add(extract_type_object(rs_method["return_type"]))
 
         # Check if some args need to be passed by reference
         ref_args = []
@@ -883,9 +883,8 @@ class RustTranspiler(CLikeTranspiler):
         # General case
         else:
             typename = self._typename_from_annotation(target)
+            print(f"typename {ast.dump(target)} -> {typename}")
             needs_cast = self._needs_cast(target, node.value)
-            
-            # TODO hide annotations?
             target_str = self.visit(target)
             value = self.visit(node.value)
             if needs_cast:

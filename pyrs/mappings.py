@@ -51,8 +51,6 @@ def map_import(class_path):
     else:
         return None
 
-
-# TODO type check
 def py_method_name_to_rs_method(py_method_name):
     for py_class_path in HIFIBER_MAPPINGS:
         py_class = HIFIBER_MAPPINGS[py_class_path]
@@ -63,8 +61,7 @@ def py_method_name_to_rs_method(py_method_name):
         if py_method_name in py_method_names:
             return py_class["methods"][py_method_name]
     
-    #return None
-    return "test"
+    return None
 
 def py_class_name_to_rs_class(py_class_name):
     for py_class_path in HIFIBER_MAPPINGS:

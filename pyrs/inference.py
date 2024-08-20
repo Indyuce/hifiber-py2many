@@ -186,7 +186,6 @@ class InferRustTypesTransformer(ast.NodeTransformer):
     def visit_Call(self, node):
         if hasattr(node, "annotation"):
             return node
-    
 
         # Constructors TODO check if class is imported.
         if isinstance(node.func, ast.Name):

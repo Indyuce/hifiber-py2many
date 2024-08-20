@@ -8,6 +8,9 @@
 - [ ] Problems with integer types. Replace `i32`'s with `usize`'s
 - [x] Add basic HiFiber class/method mapping
 - [x] Support HiFiber types in type inference
+- [ ] Ability to hide annotations.
+- [x] Assignments should register new usings
+- [ ] Delete redundant usings
 
 ## Future issues to address
 

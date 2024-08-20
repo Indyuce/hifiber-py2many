@@ -3,6 +3,7 @@
 //! edition = "2021"
 //! [dependencies]
 //! fibertree = "*"
+//! hifiber = "*"
 //! random = "*"
 //! ```
 
@@ -30,6 +31,8 @@
 #![allow(unused_mut)]
 #![allow(unused_parens)]
 
+use hifiber::core::eager::EagerFiber;
+use hifiber::core::tensor::Tensor;
 use std::collections;
 use std::io::Result;
 
