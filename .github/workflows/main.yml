@@ -1,9 +1,38 @@
-name: CI
+name: Flexible Matrix
 
 # Controls when the action will run.
 on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      focus:
+        type: choice
+        description: 'Which langauges to test'
+        default: ''
+        options:
+        - cpp
+        - dart
+        - go
+        - julia
+        - kotlin
+        - nim
+        - smt
+        - vlang
+        - dlang
+        - mojo
+        - ''
+      os:
+        type: choice
+        description: 'Which OSes to test'
+        default: 'ubuntu-24.04'
+        options:
+        - ubuntu-22.04
+        - ubuntu-24.04
+        - macos-12
+        - windows-2022
+      python_version:
+        description: 'Which python versions to test'
+        default: '["3.12"]'
 
 # Cancel previous jobs for the same branch
 concurrency:
@@ -11,27 +40,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Can be blank, or one of: cpp, dart, go, julia, kotlin, nim, smt, vlang, dlang
-  FOCUS: ''
+  FOCUS: ${{ github.event.inputs.focus }}
 jobs:
   build:
 
     strategy:
       matrix:
-        python-version:
-          - '3.8'
-          - '3.9'
-          - '3.12'
-        os:
-          - ubuntu-22.04
-          - macos-12
-          - windows-2022
-        exclude:
-          - python-version: '3.8'
-            os: macos-12
-          - python-version: '3.9'
-            os: macos-12
-    runs-on: ${{ matrix.os }}
+        python-version: ${{ fromJSON(github.event.inputs.python_version)}}
+    runs-on: ${{ github.event.inputs.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +70,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         if: ${{ !env.FOCUS || env.FOCUS == 'dart' }}
         with:
-          flutter-version: '2.10.5'
+          flutter-version: '3.22.3'
 
-      - uses: julia-actions/setup-julia@v1
+      - uses: julia-actions/setup-julia@v2
         if: ${{ !env.FOCUS || env.FOCUS == 'julia' }}
 
       - uses: fwilhe2/setup-kotlin@main
@@ -67,13 +83,15 @@ jobs:
         run: |
           echo KOTLIN_HOME=$(kotlin -e 'System.getProperty("kotlin.home")') >> $GITHUB_ENV
 
-      - uses: jiro4989/setup-nim-action@v1
+      - uses: jiro4989/setup-nim-action@v2
         if: ${{ !env.FOCUS || env.FOCUS == 'nim' }}
       - uses: actions/setup-go@v5
         if: ${{ !env.FOCUS || env.FOCUS == 'go' }}
         # Needed as https://github.com/actions/setup-go/pull/89 is not merged
         with:
           go-version: '1.21.5'
+      - uses: fabasoad/setup-mojo-action@v1
+        if: ${{ !env.FOCUS || env.FOCUS == 'mojo' }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -212,7 +230,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install linters
-        run: pip install black cpplint isort pyflakes
+        run: pip install black cpplint isort flake8
 
       - name: Remove expected .py files
         run: rm tests/expected/*.py tests/dir_cases/test1-*-expected/*.py
@@ -226,8 +244,8 @@ jobs:
       - name: Remove test case .py files
         run: rm tests/cases/*.py
 
-      - name: Run pyflakes
-        run: pyflakes */ *.py
+      - name: Run flake8
+        run: flake8 .
 
       - name: Run cpplint
         run: cpplint --filter=-legal/copyright,-whitespace/semicolon,-runtime/reference tests/expected/*.cpp

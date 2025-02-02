@@ -12,7 +12,6 @@ if CI in ["1", "true"]:  # pragma: no cover
 else:
     from pyrs import settings as rust_settings
 
-
 PY2MANY_DIR = pathlib.Path(__file__).parent
 ROOT_DIR = PY2MANY_DIR.parent
 FAKE_ARGS = Mock(indent=4)
@@ -36,4 +35,4 @@ ALL_SETTINGS = {
 
 
 def _get_all_settings(args, env=os.environ):
-    return dict((key, func(args, env=env)) for key, func in ALL_SETTINGS.items())
+    return {key: func(args, env=env) for key, func in ALL_SETTINGS.items()}

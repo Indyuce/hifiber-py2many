@@ -30,7 +30,7 @@ Here are some notes for ubuntu 20.04
 ### Ubuntu 20.04 + python3
 
 ```bash
-sudo apt install python3 python3-pip python3-pytest tox black pyflakes3
+sudo apt install python3 python3-pip python3-pytest tox black flake8
 ```
 
 ### Ubuntu 20.04 + C++
@@ -57,6 +57,11 @@ The following commands will install most of the dependencies on MacOS
 brew install astyle clang-format flutter gcc go julia kotlin maven nim rust vlang z3
 ```
 
+## Setting up python dependencies
+```bash
+pip3 install -e .[test]
+```
+
 ## Running tests for C++ only
 
 ```bash
@@ -81,7 +86,7 @@ golden output and then discarded. If you want to keep them around for debugging
 purposes, you can use:
 
 ```bash
-export KEEP_EXISTING=1
+export KEEP_GENERATED=1
 pytest-3 -k some_test -v
 ```
 

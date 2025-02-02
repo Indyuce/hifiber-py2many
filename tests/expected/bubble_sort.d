@@ -5,7 +5,7 @@ import std.range : iota;
 import std.typecons : tuple;
 
 int[] bubble_sort(int[] seq) {
-  const L = seq.length;
+  auto L = seq.length;
   foreach (_; iota(0, L, 1)) {
     foreach (n; iota(1, L, 1)) {
 

@@ -16,6 +16,7 @@ from .inference import infer_types, infer_types_typpete
 from .language import LanguageSettings
 from .mutability_transformer import detect_mutable_vars
 from .nesting_transformer import detect_nesting_levels
+from .raises_transformer import detect_raises
 from .registry import ALL_SETTINGS, FAKE_ARGS, _get_all_settings
 from .rewriters import (
     ComplexDestructuringRewriter,
@@ -31,6 +32,7 @@ from .rewriters import (
 )
 from .scope import add_scope_context
 from .toposort_modules import toposort
+from .version import __version__
 
 PY2MANY_DIR = Path(__file__).parent
 ROOT_DIR = PY2MANY_DIR.parent
@@ -46,6 +48,7 @@ def core_transformers(tree, trees, args):
     add_list_calls(tree)
     detect_mutable_vars(tree)
     detect_nesting_levels(tree)
+    detect_raises(tree)
     add_annotation_flags(tree)
     infer_meta = (
         infer_types_typpete(tree) if args and args.typpete else infer_types(tree)
@@ -65,6 +68,10 @@ def _transpile(
     Transpile a single python translation unit (a python script) into
     target language
     """
+    if hasattr(args, "llm") and args.llm:
+        from .llm_transpile import llm_transpile
+
+        return llm_transpile(filenames, sources, settings, args)
     transpiler = settings.transpiler
     rewriters = settings.rewriters
     transformers = settings.transformers
@@ -273,6 +280,8 @@ def _format_one(settings, output_path, env=None):
         if restore_cwd:
             os.chdir(restore_cwd)
     except Exception as e:
+        if settings.ignore_formatter_errors:
+            return True
         print(f"Error: Could not format: {output_path}")
         print(f"Due to: {e.__class__.__name__} {e}")
         return False
@@ -392,6 +401,20 @@ def main(args=None, env=os.environ):
         help="Place unsupported constructs in comments",
     )
     parser.add_argument(
+        "--no-strict",
+        dest="strict",
+        default=True,
+        action="store_false",
+        help="Skip over unsupported constructs and generate some code",
+    )
+    parser.add_argument(
+        "--ignore-formatter-errors",
+        dest="ignore_formatter_errors",
+        default=False,
+        action="store_true",
+        help="Ignore formatter error if its not installed",
+    )
+    parser.add_argument(
         "--extension",
         action="store_true",
         default=False,
@@ -416,9 +439,31 @@ def main(args=None, env=os.environ):
         help="Use typpete for inference",
     )
     parser.add_argument(
+        "--version",
+        action="store_true",
+        default=False,
+        help="Display version number",
+    )
+    parser.add_argument(
         "--project", default=True, help="Create a project when using directory mode"
     )
+    parser.add_argument(
+        "--llm",
+        action="store_true",
+        default=False,
+        help="Use llm for transpiling",
+    )
+    parser.add_argument(
+        "--llm-model",
+        type=str,
+        default="",
+        help="LLM Model to use. Configurable other ways too",
+    )
     args, rest = parser.parse_known_args(args=args)
+
+    if args.version:
+        print(__version__)
+        return 0
 
     # Validation of the args
     if args.extension and not args.rust:
@@ -435,7 +480,13 @@ def main(args=None, env=os.environ):
 
     if args.comment_unsupported:
         print("Wrapping unimplemented in comments")
-        settings.transpiler._throw_on_unimplemented = False
+        settings.transpiler.set_continue_on_unimplemented()
+
+    if not args.strict:
+        print("Warning: some code may be experimental and incorrect")
+        settings.transpiler.set_continue_on_unimplemented()
+
+    settings.ignore_formatter_errors = args.ignore_formatter_errors
 
     for filename in rest:
         source = Path(filename)

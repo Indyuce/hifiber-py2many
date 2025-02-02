@@ -1,11 +1,13 @@
 import ast
 import os.path
 import sys
-import unittest
 from functools import lru_cache, partial
+from itertools import product
 from subprocess import run
 from textwrap import dedent
 from unittest.mock import Mock
+
+import pytest
 
 try:
     from astpretty import pprint as ast_pretty_print
@@ -24,7 +26,6 @@ except ImportError:
 from test_cli import BUILD_DIR, COMPILERS, ENV, GENERATED_DIR, INVOKER, KEEP_GENERATED
 from test_cli import LANGS as _LANGS
 from test_cli import SHOW_ERRORS, TESTS_DIR, get_exe_filename, has_main_lines
-from unittest_expander import expand, foreach
 
 import py2many.cli
 from py2many.cli import (
@@ -127,6 +128,7 @@ TEST_CASES = {
     "dict_del": "a = {1: 1}; del a[1]; assert not a",
     "dict_order": "a = {1: 1, 2: 2, 3: 3}; del a[2]; a[2] = 2; assert list(a.keys()) == [1, 3, 2]",
 }
+TEST_PARAMS = [(case, lang) for case, lang in product(TEST_CASES, LANGS)]
 
 # NOTE: Inclusion here does not indicate that the case is comparable
 EXPECTED_SUCCESSES = [
@@ -136,9 +138,14 @@ EXPECTED_SUCCESSES = [
     "annassign_List.v",
     "any.v",
     "any.jl",
+    "assert_0.d",
+    "assert_None.d",
+    "assert_str.d",
+    "bool_plus_int.d",
     "bool_plus_int.jl",
     "bool_plus_int.rs",
     "bool_plus_int.v",
+    "bool_to_int.d",
     "bool_to_int.jl",
     "bool_to_int.nim",
     "bool_to_int.rs",
@@ -148,26 +155,34 @@ EXPECTED_SUCCESSES = [
     "complex_dict.nim",
     "complex_dict.rs",
     "class_vars.rs",
+    "del.d",
     # "del.rs", not sure why this is now broken
     "default_init.dart",
+    "dict_empty.d",
     "dict_get.kt",
+    "dict_get_default.d",
     "dict_get_default.jl",
     "dict_keys.dart",
     "dict_keys.jl",
     "dict_keys.rs",
+    "dict_keys_compare.d",
     "dict_keys_compare.dart",
     "dict_keys_compare.jl",
     "dict_keys_compare.rs",
     "dict_keys_compare.v",
+    "dict_keys_explicit.d",
     "dict_keys_explicit.jl",
     "dict_keys_explicit.rs",
     #    "dict_keys_explicit.v", # -translated switch breaks this now, will fix later.
+    "dict_value_type.d",
     "dict_value_type.dart",
     "dict_value_type.jl",
     "dict_value_type.kt",
+    "dict_values.d",
     "dict_values.jl",
     "dict_values.rs",
     "dict_values.v",
+    "empty_print.d",
     "empty_print.dart",
     "empty_print.jl",
     "empty_print.kt",
@@ -182,11 +197,14 @@ EXPECTED_SUCCESSES = [
     "list_slice.jl",
     "list_destruct.v",
     "nested_class.kt",
+    "nested_func.d",
     "nested_func.dart",
     "nested_func.kt",
     "nested_func.rs",
+    "print_None.d",
     "print_None.dart",
     "print_None.jl",
+    "simple_dict.d",
     "simple_dict.dart",
     "simple_dict.jl",
     "simple_dict.kt",
@@ -197,7 +215,9 @@ EXPECTED_SUCCESSES = [
     "str_mult.dart",
     "str_mult.v",
     "tuple_destruct.jl",
+    "str_compre.d",
     "str_compre.jl",
+    "list_compre.d",
     "list_compre.jl",
 ]
 
@@ -215,7 +235,7 @@ def has_main(source):
 @lru_cache()
 def get_tree(source_data, ext):
     is_script = has_main(source_data)
-    if ext in [".dart", ".kt", ".rs"] and not is_script:
+    if ext in [".dart", ".kt", ".rs", ".d"] and not is_script:
         source_data = f"if __name__ == '__main__':\n  {source_data}"
     print(f">{source_data}<")
     tree = ast.parse(source_data)
@@ -226,19 +246,18 @@ def get_tree(source_data, ext):
     return tree
 
 
-@expand
-class CodeGeneratorTests(unittest.TestCase):
+class TestCodeGenerator:
     maxDiff = None
 
     SHOW_ERRORS = SHOW_ERRORS
 
-    def setUp(self):
+    @classmethod
+    def setup_class(cls):
         os.makedirs(BUILD_DIR, exist_ok=True)
         os.chdir(BUILD_DIR)
         py2many.cli.CWD = BUILD_DIR
 
-    @foreach(sorted(LANGS))
-    @foreach(sorted(TEST_CASES.keys()))
+    @pytest.mark.parametrize("case,lang", TEST_PARAMS)
     def test_snippet(self, case, lang):
         env = os.environ.copy()
         if ENV.get(lang):
@@ -255,11 +274,11 @@ class CodeGeneratorTests(unittest.TestCase):
         try:
             result = _transpile([case_filename], [tree], settings)[0][0]
         except NotImplementedError as e:
-            raise unittest.SkipTest(str(e))
+            raise pytest.skip(str(e))
 
         if settings.formatter:
             if not find_executable(settings.formatter[0]):
-                raise unittest.SkipTest(f"{settings.formatter[0]} not available")
+                raise pytest.skip(f"{settings.formatter[0]} not available")
 
         exe = get_exe_filename(case, ext)
         exe.unlink(missing_ok=True)
@@ -275,7 +294,7 @@ class CodeGeneratorTests(unittest.TestCase):
                 case_output = _relative_to_cwd(case_output)
             proc = run([*settings.formatter, case_output], env=env, capture_output=True)
             if proc.returncode and not self.SHOW_ERRORS:
-                raise unittest.SkipTest(
+                raise pytest.skip(
                     f"Error: Could not reformat using {settings.formatter}:\n{proc.stdout}{proc.stderr}"
                 )
             assert not proc.returncode
@@ -284,12 +303,12 @@ class CodeGeneratorTests(unittest.TestCase):
             compiler = COMPILERS.get(lang)
             if compiler:
                 if not find_executable(compiler[0]):
-                    raise unittest.SkipTest(f"{compiler[0]} not available")
+                    raise pytest.skip(f"{compiler[0]} not available")
                 cmd = _create_cmd(compiler, filename=case_output, exe=exe)
                 proc = run(cmd, env=env, capture_output=True)
 
                 if proc.returncode and not expect_success and not self.SHOW_ERRORS:
-                    raise unittest.SkipTest(
+                    raise pytest.skip(
                         f"{case}{ext} doesnt compile:\n{proc.stdout}{proc.stderr}"
                     )
                 assert not proc.returncode
@@ -297,11 +316,11 @@ class CodeGeneratorTests(unittest.TestCase):
             if INVOKER.get(lang):
                 invoker = INVOKER.get(lang)
                 if not find_executable(invoker[0]):
-                    raise unittest.SkipTest(f"{invoker[0]} not available")
+                    raise pytest.skip(f"{invoker[0]} not available")
                 proc = run([*invoker, case_output], env=env, capture_output=True)
 
                 if proc.returncode and not expect_success and not self.SHOW_ERRORS:
-                    raise unittest.SkipTest(
+                    raise pytest.skip(
                         f"Execution of {case}{ext} failed:\n{proc.stdout}{proc.stderr}"
                     )
                 if not expect_success:
@@ -313,7 +332,7 @@ class CodeGeneratorTests(unittest.TestCase):
             elif exe.exists() and os.access(exe, os.X_OK):
                 proc = run([exe], env=env, capture_output=True)
                 if proc.returncode and not expect_success and not self.SHOW_ERRORS:
-                    raise unittest.SkipTest(
+                    raise pytest.skip(
                         f"Invocation error {proc.returncode}:\n{proc.stdout}{proc.stderr}"
                     )
                 if not expect_success:
@@ -333,7 +352,7 @@ class CodeGeneratorTests(unittest.TestCase):
         if not expect_success:
             assert False
 
-    @foreach(sorted(LANGS))
+    @pytest.mark.parametrize("lang", LANGS)
     def test_comment_unimplemented_body(self, lang):
         env = os.environ.copy()
         settings = _get_all_settings(
@@ -370,7 +389,7 @@ class CodeGeneratorTests(unittest.TestCase):
             raise
 
     # These tests are expected to fail for all languages
-    @foreach(sorted(TEST_ERROR_CASES.keys()))
+    @pytest.mark.parametrize("case", sorted(TEST_ERROR_CASES))
     def test_error_cases(self, case):
         env = os.environ.copy()
         lang = "rust"  # Just so we avoid running tests N times
@@ -399,4 +418,4 @@ class CodeGeneratorTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest.main()

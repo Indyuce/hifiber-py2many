@@ -26,9 +26,7 @@ def settings(args, env=os.environ):
         [partial(infer_rust_types, extension=args.extension)],
         [RustLoopIndexRewriter(), RustStringJoinRewriter()],
         linter=[
-            "cargo",
-            "clippy",
-            "-Zscript",
-            "--manifest-path",
+            "../../scripts/rust-runner.sh",
+            "lint",
         ],
     )

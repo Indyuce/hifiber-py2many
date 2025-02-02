@@ -1,14 +1,22 @@
-#!/usr/bin/env python3
-try:
-    from distutils.core import setup
-except ImportError:
-    from setuptools import setup
+import sys
 
-__version__ = "0.4"
+from setuptools import setup
 
-install_requires = ["toposort", "astor; python_version<'3.9'"]
+version = None
+with open("py2many/version.py") as f:
+    for line in f.readlines():
+        if line.startswith("__version__"):
+            delim = '"' if '"' in line else "'"
+            version = line.split(delim)[1]
+
+install_requires = []
 setup_requires = []
-tests_require = ["pytest", "unittest-expander", "argparse_dataclass"]
+test_deps = ["pytest", "argparse_dataclass"]
+
+extras = {
+    "test": test_deps,
+    "llm": ["mlx_llm"] if sys.platform == "darwin" else ["llm", "llm-ollama"],
+}
 
 with open("README.md") as readme_file:
     readme = readme_file.read()
@@ -21,18 +29,19 @@ packages = [
     "pygo",
     "pyjl",
     "pykt",
+    "pymojo",
     "pynim",
     "pyrs",
     "pysmt",
     "pyv",
 ]
-package_dir = dict((f"py2many.{pkg}", pkg) for pkg in packages if pkg != "py2many")
+package_dir = {f"py2many.{pkg}": pkg for pkg in packages if pkg != "py2many"}
 package_dir["py2many"] = "py2many"
 packages = sorted(package_dir.keys())
 
 setup(
     name="py2many",
-    version=__version__,
+    version=version,
     description="Python to CLike language transpiler.",
     long_description=readme + "\n\n",
     long_description_content_type="text/markdown",
@@ -41,7 +50,8 @@ setup(
     url="https://github.com/adsharma/py2many",
     install_requires=install_requires,
     setup_requires=setup_requires,
-    tests_require=tests_require,
+    tests_require=test_deps,
+    extras_require=extras,
     packages=packages,
     package_dir=package_dir,
     license="MIT",

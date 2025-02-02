@@ -1,6 +1,7 @@
 # Trace object types that are inserted into Python list.
 
 import ast
+from collections.abc import Iterable
 from typing import Optional
 
 from py2many.analysis import get_id
@@ -11,6 +12,8 @@ from py2many.exceptions import AstNotImplementedError
 # TODO: is it slow? is it correct?
 def _lookup_class_or_module(name, scopes) -> Optional[ast.ClassDef]:
     for scope in scopes:
+        if not isinstance(scope.body, Iterable):
+            continue
         for entry in scope.body:
             if isinstance(entry, ast.ClassDef):
                 if entry.name == name:
@@ -30,7 +33,7 @@ def is_class_or_module(name, scopes):
 def is_enum(name, scopes):
     entry = _lookup_class_or_module(name, scopes)
     if entry and hasattr(entry, "bases"):
-        bases = set([get_id(base) for base in entry.bases])
+        bases = {get_id(base) for base in entry.bases}
         enum_bases = {"Enum", "IntEnum", "IntFlag"}
         return bases & enum_bases
     return False
@@ -153,7 +156,7 @@ class ValueExpressionVisitor(ast.NodeVisitor):
         if hasattr(var, "assigned_from"):
             if isinstance(var.assigned_from, ast.For):
                 it = var.assigned_from.iter
-                return "std::declval<typename decltype({0})::value_type>()".format(
+                return "std::declval<typename decltype({})::value_type>()".format(
                     self.visit(it)
                 )
             elif isinstance(var.assigned_from, ast.FunctionDef):
@@ -167,13 +170,13 @@ class ValueExpressionVisitor(ast.NodeVisitor):
         arg_strings = [self.visit(arg) for arg in node.args]
         arg_strings = [a for a in arg_strings if a is not None]
         params = ",".join(arg_strings)
-        return "{0}({1})".format(self.visit(node.func), params)
+        return f"{self.visit(node.func)}({params})"
 
     def visit_Assign(self, node):
         return self.visit(node.value)
 
     def visit_BinOp(self, node):
-        return "{0} {1} {2}".format(
+        return "{} {} {}".format(
             self.visit(node.left),
             CLikeTranspiler().visit(node.op),
             self.visit(node.right),
@@ -210,7 +213,7 @@ class ValueTypeVisitor(ast.NodeVisitor):
         if any(t is None for t in params):
             raise AstNotImplementedError(f"Call({params}) not implemented", node)
         params = ",".join(params)
-        return "{0}({1})".format(self.visit(node.func), params)
+        return f"{self.visit(node.func)}({params})"
 
     def visit_Attribute(self, node):
         value_id = get_id(node.value)

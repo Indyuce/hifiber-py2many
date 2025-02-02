@@ -1,6 +1,17 @@
 # Changelog
 
-## [0.4.1] - Not released
+## [0.6] - 2025-01-01
+
+- Mojo backend
+- Much improved type inference
+- Python 3.13 supported
+- Streamlined dependencies
+
+## [0.5.1] - 2024-08-10
+
+- Minor release eng related cleanups
+
+## [0.5] - 2024-08-10
 
 - Python 3.12 support
 - Support GCC 13
