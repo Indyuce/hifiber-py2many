@@ -23,17 +23,7 @@ with open("README.md") as readme_file:
 
 packages = [
     "py2many",
-    "pycpp",
-    "pyd",
-    "pydart",
-    "pygo",
-    "pyjl",
-    "pykt",
-    "pymojo",
-    "pynim",
     "pyrs",
-    "pysmt",
-    "pyv",
 ]
 package_dir = {f"py2many.{pkg}": pkg for pkg in packages if pkg != "py2many"}
 package_dir["py2many"] = "py2many"
