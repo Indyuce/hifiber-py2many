@@ -1,24 +1,16 @@
 #!/usr/bin/python
 import os
 import random
-from fibertree import Metrics, Tensor
-from fibertree.model import Compute, Format, Traffic
-from teaal.parse import Einsum as EinsumParser
-from teaal.parse import Mapping as MappingParser
-from teaal.parse import Architecture as ArchitectureParser
-from teaal.parse import Bindings as BindingsParser
-from teaal.parse import Format as FormatParser
-from teaal.trans.hifiber import HiFiber
+from fibertree import Tensor
 
 if __name__ == "__main__":
     K = 10
     M = 10
     N = 10
+    A_KM = Tensor(rank_ids=["K", "M", "N"], shape=[K, M])
+    B_KN = Tensor(rank_ids=["K", "M", "N"], shape=[K, N])
 
-    A_KM = Tensor(rank_ids=["K", "M"], shape=[K, M])
-    B_KN = Tensor(rank_ids=["K", "N"], shape=[K, N])
-
-    Z_NM = Tensor(rank_ids=["N", "M"])
+    Z_NM = Tensor(rank_ids=["N", "M"], shape=[N, M])
     tmp0 = A_KM
     tmp1 = tmp0.splitUniform(128, depth=0)
     A_K1K0M = tmp1
@@ -50,7 +42,7 @@ if __name__ == "__main__":
                     z_ref = z_m.getPayloadRef(m)
                     b_val = b_k0.getPayload(k0)
                     z_ref += a_val * b_val
-                    #canvas.addActivity((k1, (m, k0)), (k1, n, k0), (n, m), spacetime=((mk00_pos,), (k1_pos, mk01_pos, n_pos)))
+                    #  canvas.addActivity((k1, (m, k0)), (k1, n, k0), (n, m), spacetime=((mk00_pos,), (k1_pos, mk01_pos, n_pos)))
     tmp8 = Z_NM
     tmp9 = tmp8.swizzleRanks(rank_ids=["M", "N"])
     Z_MN = tmp9

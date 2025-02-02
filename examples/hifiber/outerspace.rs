@@ -41,41 +41,35 @@ pub fn main() -> Result<()> {
     let K = 10;
     let M = 10;
     let N = 10;
-    let A_KM = Tensor::new_empty(vec!["K", "M"], vec![K as usize, M as usize]);
-    let B_KN = Tensor::new_empty(vec!["K", "N"], vec![K as usize, N as usize]);
-    let T0_KMN = Tensor::new_empty(
-        vec!["K", "M", "N"],
-        vec![K as usize, M as usize, N as usize],
-    );
-    let t0_k: &mut EagerFiber = T0_KMN.get_root_mut();
-    let a_k: &mut EagerFiber = A_KM.get_root_mut();
-    let b_k: &mut EagerFiber = B_KN.get_root_mut();
-    for (k, (t0_m, (a_m, b_n))) in (t0_k << (a_k & b_k)) {
-        for (m, (t0_n, a_val)) in (t0_m << a_m) {
-            for (n, (t0_ref, b_val)) in (t0_n << b_n) {
-                t0_ref += (a_val * b_val);
-            }
+let A_KM = Tensor::new_empty(vec!["K", "M", "N"], vec![K, M]);
+let B_KN = Tensor::new_empty(vec!["K", "M", "N"], vec![K, N]);
+let T0_KMN = Tensor::new_empty(vec!["K", "M", "N"], vec![K, M, N]);
+let t0_k = T0_KMN.get_root_mut();
+let a_k = A_KM.get_root_mut();
+let b_k = B_KN.get_root_mut();
+for (k, (t0_m, (a_m, b_n))) in (t0_k << (a_k & b_k)) {
+    for (m, (t0_n, a_val)) in (t0_m << a_m) {
+        for (n, (t0_ref, b_val)) in (t0_n << b_n) {
+            t0_ref += (a_val * b_val);
         }
     }
-    let tmp0 = T0_KMN;
-    let tmp1: Tensor = tmp0.swizzle_ranks(vec!["M", "K", "N"]);
-    let T0_MKN: Tensor = tmp1;
-    let T1_MKN = Tensor::new_empty(
-        vec!["M", "K", "N"],
-        vec![M as usize, K as usize, N as usize],
-    );
-    let mut t1_m: &mut EagerFiber = T1_MKN.get_root_mut();
-    let t0_m: &mut EagerFiber = T0_MKN.get_root_mut();
-    for (m, (t1_k, t0_k)) in (t1_m << t0_m) {
-        for (k, (t1_n, t0_n)) in (t1_k << t0_k) {
-            for (n, (t1_ref, t0_val)) in (t1_n << t0_n) {
-                t1_ref += t0_val;
-            }
+}
+let tmp0 = T0_KMN;
+let tmp1: Tensor = tmp0.swizzle_ranks(vec!["M", "K", "N"]);
+let T0_MKN: Tensor = tmp1;
+let T1_MKN = Tensor::new_empty(vec!["M", "K", "N"], vec![M, K, N]);
+let mut t1_m = T1_MKN.get_root_mut();
+let t0_m = T0_MKN.get_root_mut();
+for (m_pos, (m, (t1_k, t0_k))) in (t1_m << t0_m) {
+    for (k_pos, (k, (t1_n, t0_n))) in (t1_k << t0_k) {
+        for (n_pos, (n, (t1_ref, t0_val))) in (t1_n << t0_n) {
+            t1_ref += t0_val;
         }
     }
-    let Z_MN = Tensor::new_empty(vec!["M", "N"], vec![M as usize, N as usize]);
-    let z_m: &mut EagerFiber = Z_MN.get_root_mut();
+}
+    let Z_MN = Tensor::new_empty(vec!["M", "N"], vec![M, N]);
     let T1_MNK: Tensor = T1_MKN.swizzle_ranks(vec!["M", "N", "K"]);
+    let z_m = Z_MN.get_root_mut();
     t1_m = T1_MNK.get_root_mut();
     for (m, (z_n, t1_n)) in (z_m << t1_m) {
         for (n, (z_ref, t1_k)) in (z_n << t1_n) {

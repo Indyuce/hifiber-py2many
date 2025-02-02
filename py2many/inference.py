@@ -195,11 +195,11 @@ class InferTypesTransformer(ast.NodeTransformer):
         annotation = self._infer_primitive(node.value)
         if annotation is not None:
             node.annotation = annotation
+            node.annotation.hide = True # Always hide annotations on constants
             node.annotation.lifetime = (
                 LifeTime.STATIC if type(node.value) == str else LifeTime.UNKNOWN
             )
         self.generic_visit(node)
-        node.annotation.hide = True # Always hide annotations on constants
         return node
 
     def visit_Name(self, node):

@@ -202,10 +202,15 @@ class InferRustTypesTransformer(ast.NodeTransformer):
         elif isinstance(node.func, ast.Attribute):
             rs_method = py_method_name_to_rs_method(node.func.attr)
             if rs_method != None:
-                contracted_return_type = contract_type_name(rs_method["return_type"])
-                node.annotation = ast.Name(id=contracted_return_type)
-                #if bool(rs_method.get("hide_annotation")):
-                #    node.annotation.hide = True
+
+                # Filter out void methods
+                return_type = rs_method.get("return_type")
+                if return_type != None:
+                    contracted_return_type = contract_type_name(return_type)
+                    node.annotation = ast.Name(id=contracted_return_type)
+                    #if bool(rs_method.get("hide_annotation")):
+                    #    node.annotation.hide = True
+
                 return node
         
         else:
